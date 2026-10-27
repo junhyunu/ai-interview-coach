@@ -24,6 +24,7 @@ DEFAULTS = {
     "profile": None, "context": "", "questions": [], "records": [], "messages": [],
     "qi": 0, "phase": "main", "follow_used": 0, "clarify_used": 0, "understanding": None,
     "evaluation": None, "retries": {}, "polish": None,
+    "saved": {},               # {질문 번호: {question, text, source}} — 질문당 1개
 }
 for k, v in DEFAULTS.items():
     if k not in S:
@@ -92,6 +93,29 @@ def go(view: str):
     S.view = view
 
 
+# ── 저장한 답 ─────────────────────────────
+def save_answer(no: int, text: str | None = None, source: str = "", text_key: str | None = None):
+    text = (S.get(text_key) if text_key else text) or ""
+    if not text.strip():
+        return
+    question = next(r["question"] for r in S.records if r["no"] == no)
+    S.saved[no] = {"question": question, "text": text.strip(), "source": source}
+
+
+def delete_saved(no: int):
+    S.saved.pop(no, None)
+
+
+def saved_note(no: int):
+    """저장 상태 한 줄. [확인 필요]가 남아 있으면 알려 준다."""
+    s = S.saved.get(no)
+    if not s:
+        return
+    left = coach.count_unverified(s["text"])
+    md(f'<p class="saved-note">✓ 저장됨 · {esc(s["source"])}'
+       + (f' · <span class="verify">[확인 필요] {left}개를 아직 채우지 않았어요</span>' if left else "") + "</p>")
+
+
 # ── 📟 상태창 ───────────────────────────────
 def sidebar():
     with st.sidebar:
@@ -119,7 +143,8 @@ def sidebar():
             if S.evaluation:
                 ev = S.evaluation
                 rows += [("위원 평균", f"{ev['panel_avg']} / 10"), ("답변 평균", f"{ev['answer_avg']} / 20"),
-                         ("재도전", f"{len(S.retries)} / {len(coach.retry_targets(ev['answers']))}")]
+                         ("재도전", f"{len(S.retries)} / {len(coach.retry_targets(ev['answers']))}"),
+                         ("저장한 답", f"{len(S.saved)}개")]
             md('<div style="margin-top:22px">' + "".join(
                 f'<div class="side-row"><span class="k">{k}</span><span>{v}</span></div>' for k, v in rows) + "</div>")
 
@@ -363,7 +388,8 @@ def view_eval():
     block_head("답변별", "질문마다 점수와 고친 답")
     for a in ev["answers"]:
         state = "고친 답 있음" if coach.needs_rewrite(a) else "통과"
-        with st.expander(f"Q{a['no']}  ·  {a['total']}/20  ·  {state}"):
+        mark = "  ·  저장됨" if a["no"] in S.saved else ""
+        with st.expander(f"Q{a['no']}  ·  {a['total']}/20  ·  {state}{mark}", key=f"exp_eval_{a['no']}"):
             md(f'<p style="margin:0 0 8px"><b style="font-weight:500">{esc(a["question"])}</b></p>' + bars(a)
                + f'<div class="row-note"><span class="k">약한 점</span><span>{esc(a["weak"])}</span></div>')
             if coach.needs_rewrite(a):
@@ -374,6 +400,7 @@ def view_eval():
                 if a["check"]:
                     md('<div class="block-label">사람이 확인할 것</div>')
                     st.markdown("\n".join(f"- {c}" for c in a["check"]))
+                rewrite_save_box(a)
             else:
                 st.caption(f"기준 {coach.PASS_SCORE}점 이상이라 고친 답은 생략했어요.")
 
@@ -388,6 +415,21 @@ def view_eval():
     md('<div class="spacer"></div>')
     st.button("재도전하러 가기" if low else "리포트 보기", type="primary", width="stretch",
               on_click=go, args=("재도전" if low else "리포트",))
+
+
+def rewrite_save_box(a: dict):
+    """고친 답을 그대로 저장하거나, 손본 뒤 저장."""
+    no = a["no"]
+    c1, c2 = st.columns([1, 1])
+    c1.button("이 답 저장", key=f"save_rw_{no}", width="stretch",
+              on_click=save_answer, args=(no, a["rewrite"], "AI 고친 답"))
+    editing = c2.toggle("고쳐서 저장", key=f"edit_on_{no}")
+    if editing:
+        st.text_area("고쳐 쓰기", value=a["rewrite"], key=f"edit_rw_{no}", height=150,
+                     help="[확인 필요] 칸을 실제 사실로 채우거나 지워 주세요.")
+        st.button("고친 내용 저장", key=f"save_edit_{no}", type="primary", width="stretch",
+                  on_click=save_answer, kwargs={"no": no, "source": "내가 고친 답", "text_key": f"edit_rw_{no}"})
+    saved_note(no)
 
 
 # ── ④ 재도전 ───────────────────────────────
@@ -408,8 +450,13 @@ def view_retry():
             md(f'<div class="block-label">Q{a["no"]} · 지난 점수 {a["total"]}/20</div>'
                f'<div class="block-title">{esc(a["question"])}</div>'
                f'<div class="row-note"><span class="k">약한 점</span><span>{esc(a["weak"])}</span></div>')
-            with st.expander("고친 답 참고"):
-                md(f'<div class="quote">{highlight(a["rewrite"])}</div>')
+            mine = S.saved.get(a["no"])
+            if mine and not mine["source"].startswith("재도전"):
+                with st.expander(f"내가 저장한 답 참고 · {mine['source']}"):
+                    md(f'<div class="quote">{highlight(mine["text"])}</div>')
+            else:
+                with st.expander("고친 답 참고"):
+                    md(f'<div class="quote">{highlight(a["rewrite"])}</div>')
             st.text_area("다시 답하기", key=f"retry_{a['no']}", height=150,
                          placeholder="상황 → 행동 → 결과 순서로, 내가 실제로 한 일만.")
             if st.button("다시 채점", key=f"btn_retry_{a['no']}", width="stretch"):
@@ -426,6 +473,9 @@ def view_retry():
                        for row in c["rows"]) + "</table>"
                    f'<div class="row-note" style="margin-top:8px"><span class="k">남은 약점</span>'
                    f'<span>{esc(r["weak"])}</span></div>')
+                st.button("채점한 이 답 저장", key=f"save_retry_{a['no']}", width="stretch",
+                          on_click=save_answer, args=(a["no"], r["answer"], f"재도전 답 · {c['after']}점"))
+                saved_note(a["no"])
 
     left = len(targets) - len([a for a in targets if a["no"] in S.retries])
     md('<div class="spacer"></div>')
@@ -485,7 +535,25 @@ def view_report():
             if any(q["over"] for q in S.polish["questions"]):
                 st.caption(f"{coach.POLISH_LIMIT}자를 넘은 질문은 소리 내어 말하기 길어요. 한 번 더 줄여 보세요.")
 
-    report = coach.build_report(S.profile, ev, S.retries, S.polish)
+    with st.container(key="card-saved"):
+        block_head("저장한 답", f"질문별로 남겨 둔 답 {len(S.saved)}개")
+        if not S.saved:
+            md('<p class="muted" style="font-size:14px;margin:0">평가 화면의 고친 답이나 재도전에서 다시 쓴 답을 저장하면 여기에 모여요.</p>')
+        for no in sorted(S.saved):
+            s = S.saved[no]
+            md(f'<div class="saved-item"><div class="block-label">Q{no} · <span class="tag gray">{esc(s["source"])}</span></div>'
+               f'<p style="margin:2px 0 0"><b style="font-weight:500">{esc(s["question"])}</b></p>'
+               f'<div class="quote">{highlight(s["text"])}</div></div>')
+            left = coach.count_unverified(s["text"])
+            if left:
+                md(f'<p class="saved-note"><span class="verify">[확인 필요] {left}개를 아직 채우지 않았어요</span></p>')
+            st.button("삭제", key=f"del_saved_{no}", on_click=delete_saved, args=(no,))
+        if S.saved:
+            st.download_button("저장한답.md 내려받기", coach.build_saved(S.profile, S.saved),
+                               file_name="저장한답.md", mime="text/markdown", width="stretch")
+        st.caption("저장한 답은 이번 면접 동안만 남아요. 새로고침이나 '처음부터 다시' 전에 내려받아 두세요.")
+
+    report = coach.build_report(S.profile, ev, S.retries, S.polish, S.saved)
     with st.container(key="card-report"):
         block_head("면접 리포트", f'{esc(S.profile["company"])} · {S.profile["job"]} 신입')
         s = coach.retry_summary(ev["answers"], S.retries)

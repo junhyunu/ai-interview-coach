@@ -167,7 +167,7 @@ def count_unverified(text: str) -> int:
 
 
 # ── 리포트 (코드가 계산한 숫자만) ────────────
-def build_report(profile: dict, evaluation: dict, retries: dict, polish: dict | None) -> str:
+def build_report(profile: dict, evaluation: dict, retries: dict, polish: dict | None, saved: dict | None = None) -> str:
     ev = evaluation
     summary = retry_summary(ev["answers"], retries)
     out = [
@@ -201,4 +201,21 @@ def build_report(profile: dict, evaluation: dict, retries: dict, polish: dict | 
         out += ["", "## 면접 끝에 할 질문", f"- 원래 질문: {polish['original']}"]
         out += [f"- ({q['angle']}) {q['question']}" for q in polish["questions"]]
 
+    if saved:
+        out += ["", "## 저장한 답", ""] + saved_lines(saved)
+
     return "\n".join(out) + "\n"
+
+
+# ── 저장한 답 (질문당 1개, 다시 저장하면 바뀜) ──
+def saved_lines(saved: dict) -> list[str]:
+    out = []
+    for no in sorted(saved):
+        s = saved[no]
+        out += [f"### Q{no}. {s['question']}", f"_{s['source']}_", "", s["text"].strip(), ""]
+    return out
+
+
+def build_saved(profile: dict, saved: dict) -> str:
+    head = [f"# 저장한 답 — {profile['company']} · {profile['job']} 신입", date.today().isoformat(), ""]
+    return "\n".join(head + saved_lines(saved))

@@ -115,6 +115,12 @@ table.mini th { text-align: left; font-weight: 400; color: var(--faint); font-si
 table.mini td { padding: 8px 0; border-bottom: 0.5px solid var(--hair); }
 table.mini td.up { color: var(--blue); }
 
+.saved-note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.saved-item { padding-top: 18px; margin-top: 4px; border-top: 0.5px solid var(--hair-strong); }
+.saved-item .tag { margin-left: 4px; }
+[class*="st-key-del_saved_"] button { min-height: 34px !important; padding: 0 16px !important; }
+[class*="st-key-del_saved_"] button p { font-size: 13px !important; color: var(--muted); }
+
 .stars { font-size: 30px; letter-spacing: 4px; color: var(--ink); }
 
 /* ── 버튼 ─────────────────────────── */
