@@ -1,0 +1,14 @@
+[theme]
+base = "light"
+primaryColor = "#0f1012"
+backgroundColor = "#f2f2f4"
+secondaryBackgroundColor = "#fdfdfd"
+textColor = "#0f1012"
+linkColor = "#0071e3"
+borderColor = "#e4e4e7"
+showWidgetBorder = true
+baseRadius = "14px"
+font = "'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
+
+[client]
+toolbarMode = "minimal"
